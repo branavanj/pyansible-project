@@ -1,43 +1,47 @@
 # modules/network.py
 
 import subprocess
-import time
-import emoji
-from modules.ssh import test_ssh_connection
+import paramiko
+from rich.console import Console
+
+console = Console()
 
 def ping_host(ip):
-    """Ping a host to check network connectivity."""
+    """Ping une machine pour vérifier la connectivité réseau."""
     try:
         result = subprocess.run(["ping", "-c", "1", ip], capture_output=True, text=True)
-        if result.returncode == 0:
-            print(emoji.emojize("\rTest réussi :white_check_mark:", language='alias'), end="", flush=True)
-            return True
-        else:
-            print("\rTest échoué", end="", flush=True)
-            return False
-    except Exception as e:
-        print(f"\rAn error occurred while pinging: {e}", end="", flush=True)
+        return result.returncode == 0
+    except Exception:
         return False
 
-def ping_hosts(host_list, key_file=None):
-    """Ping multiple hosts and, if reachable, test SSH connectivity."""
-    loader = ['◜', '◠', '◝', '◞', '◡', '◟']  # Animation du loader en arc de cercle
+def test_ssh_connectivity(host):
+    """Teste la connectivité SSH en utilisant Paramiko."""
+    ip = host["ip"]
+    username = host["username"]
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
+    try:
+        client.connect(ip, username=username)
+        console.print(f"[bold green]Connexion SSH réussie pour {ip}[/bold green]")
+        return True
+    except Exception as e:
+        console.print(f"[bold red]Échec de la connexion SSH pour {ip} : {e}[/bold red]")
+        return False
+    finally:
+        client.close()
+
+def ping_hosts(host_list):
+    """Teste la connectivité réseau et SSH pour plusieurs machines."""
+    all_successful = True
     for host in host_list:
         ip = host["ip"]
-        username = host["username"]
+        if not ping_host(ip):
+            console.print(f"[bold red]Connectivité réseau échouée pour {ip}[/bold red]")
+            all_successful = False
+        elif not test_ssh_connectivity(host):
+            all_successful = False
 
-        # Test de connectivité avec le loader
-        print("Test de connectivité", end="", flush=True)
-        for i in range(10):  # Durée totale du loader (5 secondes)
-            print(f"\rTest de connectivité {loader[i % len(loader)]}", end="", flush=True)
-            time.sleep(0.2)
-
-        # Si le ping est réussi, tester la connexion SSH
-        if ping_host(ip):
-            print("\rTest SSH en cours...", end="", flush=True)
-            ssh_success = test_ssh_connection(ip, username, key_file=key_file)
-            if ssh_success:
-                print(emoji.emojize("\rTest SSH réussi :white_check_mark:", language='alias'), end="", flush=True)
-            else:
-                print("\rTest SSH échoué", end="", flush=True)
+    if all_successful:
+        console.print("[bold green]Connectivité réseau et SSH réussie pour toutes les machines ![/bold green]")
+    return all_successful
